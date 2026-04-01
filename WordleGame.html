@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wordle Game</title>
+<link rel="icon" type="image/png" href="wordlelogo.png">
+<style>
+  :root {
+    --tile-size: 50px;
+    --gap: 6px;
+    --font: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    --bg: #121213;
+    --board: #121213;
+    --key: #818384;
+    --key-text: #fff;
+    --tile-border: #3a3a3c;
+    --tile-text: #fff;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--tile-text);
+    font-family: var(--font);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    height: 100vh;
+    padding: 20px;
+  }
+
+  h1 {
+    margin: 0 0 20px 0;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+
+  .board {
+    display: grid;
+    grid-template-rows: repeat(6, var(--tile-size));
+    gap: var(--gap);
+    background: var(--board);
+    margin-bottom: 10px;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: repeat(5, var(--tile-size));
+    gap: var(--gap);
+  }
+
+  .tile {
+    border: 2px solid var(--tile-border);
+    display: grid;
+    place-items: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    width: var(--tile-size);
+    height: var(--tile-size);
+    line-height: var(--tile-size);
+    background: #121213;
+    color: var(--tile-text);
+  }
+
+  .keyboard {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    max-width: 500px;
+    margin-top: 12px;
+  }
+
+  .key-row {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .key {
+    background: var(--key);
+    color: var(--key-text);
+    border: none;
+    padding: 12px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+    user-select: none;
+    flex: 1;
+    max-width: 40px;
+    text-transform: uppercase;
+    transition: background .2s;
+  }
+
+  .key.wide {
+    flex: 1.5;
+    max-width: 70px;
+  }
+
+  .key:active {
+    background: #565758;
+  }
+
+  /* Message box */
+  #message {
+    margin-top: 10px;
+    min-height: 20px;
+    font-size: 1rem;
+    font-weight: bold;
+    color: #e6e6e6;
+    text-align: center;
+  }
+
+  #reveal {
+    margin-top: 10px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #ff5555;
+    text-align: center;
+  }
+
+  #reveal button {
+    margin-top: 8px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    background: #538d4e;
+    color: white;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <h1>Wordle</h1>
+  <div id="board" class="board"></div>
+  <div id="message"></div>
+  <div id="keyboard" class="keyboard"></div>
+  <div id="reveal"></div>
+
+<script>
+const ROWS = 6, COLS = 5;
+const board = document.getElementById("board");
+const keyboard = document.getElementById("keyboard");
+const messageBox = document.getElementById("message");
+const revealBox = document.getElementById("reveal");
+
+let state, currentRow, currentCol, targetWord, wordList;
+let gameOver = false;
+
+// Build board function
+function buildBoard() {
+  board.innerHTML = "";
+  for (let r = 0; r < ROWS; r++) {
+    const row = document.createElement("div");
+    row.className = "row";
+    for (let c = 0; c < COLS; c++) {
+      const t = document.createElement("div");
+      t.className = "tile";
+      row.appendChild(t);
+    }
+    board.appendChild(row);
+  }
+}
+
+// Load words
+fetch("5letterwords.txt")
+  .then(res => res.text())
+  .then(data => {
+    wordList = data.split(/\r?\n/).map(w => w.trim().toUpperCase()).filter(w => w.length === 5);
+    resetGame();
+  });
+
+function getTile(r,c){ return board.children[r].children[c]; }
+
+function setLetter(letter){
+  if (gameOver || currentCol >= COLS || currentRow >= ROWS) return;
+  state[currentRow][currentCol] = letter;
+  getTile(currentRow, currentCol).textContent = letter;
+  currentCol++;
+}
+
+function deleteLetter(){
+  if (gameOver || currentCol === 0) return;
+  currentCol--;
+  state[currentRow][currentCol] = "";
+  getTile(currentRow, currentCol).textContent = "";
+}
+
+function showMessage(msg, color="#e6e6e6") {
+  messageBox.textContent = msg;
+  messageBox.style.color = color;
+  setTimeout(() => { messageBox.textContent = ""; }, 2000);
+}
+
+function submitGuess(){
+  if (gameOver) return;
+
+  if (currentCol < COLS) {
+    showMessage("Not enough letters!", "#ffcc00");
+    return;
+  }
+
+  const guess = state[currentRow].join("");
+  if (!wordList.includes(guess)) {
+    showMessage("Word not in list!", "#ff5555");
+    return;
+  }
+
+  let correctCount = 0;
+  const used = {};
+  for (let i=0; i<COLS; i++){
+    if (guess[i] === targetWord[i]) correctCount++;
+    else if (targetWord.includes(guess[i])) used[guess[i]] = (used[guess[i]]||0)+1;
+  }
+
+  for (let i=0; i<COLS; i++){
+    const tile = getTile(currentRow, i);
+    const letter = guess[i];
+    if (letter === targetWord[i]) {
+      tile.style.backgroundColor = "#538d4e";
+      updateKeyboardKey(letter, "#538d4e");
+    } else if (targetWord.includes(letter) && used[letter] > 0) {
+      tile.style.backgroundColor = "#b59f3b";
+      updateKeyboardKey(letter, "#b59f3b");
+      used[letter]--;
+    } else {
+      tile.style.backgroundColor = "#3a3a3c";
+      updateKeyboardKey(letter, "#3a3a3c");
+    }
+    tile.style.color = "#fff";
+  }
+
+  if (correctCount === COLS) {
+    showMessage("🎉 You guessed it!", "#00ff88");
+    revealBox.innerHTML = `<button onclick="resetGame()">Play Again</button>`;
+    gameOver = true;
+    return;
+  }
+
+  currentRow++;
+  currentCol = 0;
+  if (currentRow >= ROWS) {
+    revealBox.innerHTML = `
+      The word was: <strong>${targetWord}</strong><br>
+      <button onclick="resetGame()">Play Again</button>
+    `;
+    gameOver = true;
+  }
+}
+
+function updateKeyboardKey(letter, color){
+  const keys = document.querySelectorAll(".key");
+  keys.forEach(key=>{
+    if (key.textContent.toUpperCase() === letter.toUpperCase()) {
+      const current = key.style.backgroundColor;
+      if (current === "rgb(83, 141, 78)") return; // already green
+      if (current === "rgb(181, 159, 59)" && color === "#3a3a3c") return;
+      key.style.backgroundColor = color;
+      key.style.color = "#fff";
+    }
+  });
+}
+
+function resetGame() {
+  buildBoard();
+  state = Array.from({length: ROWS}, () => Array(COLS).fill(""));
+  currentRow = 0;
+  currentCol = 0;
+  gameOver = false;
+  revealBox.textContent = "";
+  messageBox.textContent = "";
+
+  // reset keyboard colors
+  document.querySelectorAll(".key").forEach(k=>{
+    k.style.backgroundColor = "var(--key)";
+    k.style.color = "var(--key-text)";
+  });
+
+  // pick new word
+  targetWord = wordList[Math.floor(Math.random() * wordList.length)];
+
+  console.log("New Target Word:", targetWord); 
+}
+
+
+
+// Physical keyboard
+document.addEventListener("keydown", (e)=>{
+  if (gameOver) return;
+  if (e.key === "Enter") submitGuess();
+  else if (e.key === "Backspace") deleteLetter();
+  else if (/^[a-zA-Z]$/.test(e.key)) setLetter(e.key.toUpperCase());
+});
+
+// On-screen keyboard
+const keyboardLayout = [
+  "QWERTYUIOP",
+  "ASDFGHJKL",
+  "ZXCVBNM"
+];
+keyboardLayout.forEach((rowLetters, rowIndex) => {
+  const row = document.createElement("div");
+  row.className = "key-row";
+
+  if (rowIndex === 2) {
+    const enterKey = document.createElement("button");
+    enterKey.textContent = "Enter";
+    enterKey.className = "key wide";
+    enterKey.onclick = submitGuess;
+    row.appendChild(enterKey);
+  }
+
+  for (const letter of rowLetters) {
+    const key = document.createElement("button");
+    key.textContent = letter;
+    key.className = "key";
+    key.onclick = () => setLetter(letter);
+    row.appendChild(key);
+  }
+
+  if (rowIndex === 2) {
+    const backKey = document.createElement("button");
+    backKey.textContent = "⌫";
+    backKey.className = "key wide";
+    backKey.onclick = deleteLetter;
+    row.appendChild(backKey);
+  }
+
+  keyboard.appendChild(row);
+});
+</script>
+</body>
+</html>
